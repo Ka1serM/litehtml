@@ -26,6 +26,17 @@ void litehtml::css_properties::compute(const html_tag* el, const document::ptr& 
     m_box_sizing = static_cast<box_sizing>(
         el->get_property<int>(_box_sizing_, false, box_sizing_content_box, offset(m_box_sizing)));
     m_overflow = static_cast<overflow>(el->get_property<int>(_overflow_, false, overflow_visible, offset(m_overflow)));
+    m_scrollbar_colors =
+        el->get_property<css_scrollbar_colors>(_scrollbar_color_, true, {}, offset(m_scrollbar_colors));
+    m_scrollbar_width = static_cast<scrollbar_width>(
+        el->get_property<int>(_scrollbar_width_, false, scrollbar_width_auto, offset(m_scrollbar_width)));
+    m_accent_color = el->get_property<css_accent_color>(_accent_color_, true, {}, offset(m_accent_color));
+    if(!m_scrollbar_colors.auto_value)
+    {
+        if(m_scrollbar_colors.thumb.is_current_color) m_scrollbar_colors.thumb = m_color;
+        if(m_scrollbar_colors.track.is_current_color) m_scrollbar_colors.track = m_color;
+    }
+    if(!m_accent_color.auto_value && m_accent_color.color.is_current_color) m_accent_color.color = m_color;
     m_text_align =
         static_cast<text_align>(el->get_property<int>(_text_align_, true, text_align_left, offset(m_text_align)));
     m_vertical_align = static_cast<vertical_align>(

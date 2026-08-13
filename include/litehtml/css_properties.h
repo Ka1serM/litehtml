@@ -5,6 +5,7 @@
 #include "background.h"
 #include "borders.h"
 #include "css_margins.h"
+#include "css_control.h"
 #include "css_offsets.h"
 #include "types.h"
 
@@ -35,6 +36,9 @@ namespace litehtml
         element_position      m_el_position    = element_position_static;
         text_align            m_text_align     = text_align_left;
         overflow              m_overflow       = overflow_visible;
+        css_scrollbar_colors  m_scrollbar_colors;
+        scrollbar_width       m_scrollbar_width = scrollbar_width_auto;
+        css_accent_color      m_accent_color;
         white_space           m_white_space    = white_space_normal;
         style_display         m_display        = display_inline;
         visibility            m_visibility     = visibility_visible;
@@ -117,6 +121,10 @@ namespace litehtml
 
         overflow get_overflow() const;
         void     set_overflow(overflow mOverflow);
+
+        const css_scrollbar_colors& get_scrollbar_colors() const;
+        scrollbar_width              get_scrollbar_width() const;
+        const css_accent_color&      get_accent_color() const;
 
         white_space get_white_space() const;
         void        set_white_space(white_space mWhiteSpace);
@@ -280,6 +288,21 @@ namespace litehtml
     inline void css_properties::set_overflow(overflow mOverflow)
     {
         m_overflow = mOverflow;
+    }
+
+    inline const css_scrollbar_colors& css_properties::get_scrollbar_colors() const
+    {
+        return m_scrollbar_colors;
+    }
+
+    inline scrollbar_width css_properties::get_scrollbar_width() const
+    {
+        return m_scrollbar_width;
+    }
+
+    inline const css_accent_color& css_properties::get_accent_color() const
+    {
+        return m_accent_color;
     }
 
     inline white_space css_properties::get_white_space() const

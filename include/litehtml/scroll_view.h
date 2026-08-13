@@ -16,7 +16,9 @@ namespace litehtml
       public:
         scroll_view(const position& viewport, const size& scroll_size) :
             m_viewport(viewport),
-            m_scroll_size(scroll_size)
+            m_scroll_size(scroll_size),
+            m_left(0_px),
+            m_top(0_px)
         {
         }
 

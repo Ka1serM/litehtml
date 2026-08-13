@@ -4,6 +4,7 @@
 #include "css_parser.h"
 #include "internal.h"
 #include <set>
+#include <array>
 #include "html_tag.h"
 #include "document.h"
 
@@ -32,6 +33,7 @@ namespace litehtml
         {_float_,                  element_float_strings               },
         {_clear_,                  element_clear_strings               },
         {_overflow_,               overflow_strings                    },
+        {_scrollbar_width_,        scrollbar_width_strings             },
         {_appearance_,             appearance_strings                  },
         {_box_sizing_,             box_sizing_strings                  },
 
@@ -219,6 +221,7 @@ namespace litehtml
         case _appearance_:
         case _box_sizing_:
         case _overflow_:
+        case _scrollbar_width_:
 
         case _text_align_:
         case _vertical_align_:
@@ -352,6 +355,48 @@ namespace litehtml
             if(parse_color(val, *clr, container))
             {
                 add_parsed_property(name, property_value(*clr, important));
+            }
+            break;
+
+        case _accent_color_:
+            if(ident == "auto")
+            {
+                add_parsed_property(name, property_value(css_accent_color(), important));
+            } else if(parse_color(val, *clr, container))
+            {
+                css_accent_color accent;
+                accent.color = *clr;
+                accent.auto_value = false;
+                add_parsed_property(name, property_value(accent, important));
+            }
+            break;
+
+        case _scrollbar_color_:
+            {
+                css_scrollbar_colors colors;
+                std::array<web_color, 2> parsed{};
+                std::size_t count = 0;
+                bool valid = true;
+                for(const auto& token : value)
+                {
+                    if(token.type == WHITESPACE || token.type == COMMA) continue;
+                    if(count >= parsed.size() || !parse_color(token, parsed[count], container))
+                    {
+                        valid = false;
+                        break;
+                    }
+                    ++count;
+                }
+                if(valid && count == 2)
+                {
+                    colors.thumb = parsed[0];
+                    colors.track = parsed[1];
+                    colors.auto_value = false;
+                    add_parsed_property(name, property_value(colors, important));
+                } else if(value.size() == 1 && value.front().ident() == "auto")
+                {
+                    add_parsed_property(name, property_value(colors, important));
+                }
             }
             break;
 

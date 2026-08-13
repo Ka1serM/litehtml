@@ -2,6 +2,7 @@
 #define LITEHTML_STYLE_H
 
 #include "background.h"
+#include "css_control.h"
 #include "css_length.h"
 #include "css_position.h"
 #include "css_tokenizer.h"
@@ -19,7 +20,8 @@ namespace litehtml
 
     struct property_value
         : variant<invalid, inherit, int, int_vector, css_length, length_vector, float, web_color, std::vector<image>,
-                  std::string, std::vector<std::string>, size_vector, css_token_vector>
+                  std::string, std::vector<std::string>, size_vector, css_token_vector, css_scrollbar_colors,
+                  css_accent_color>
     {
         bool m_important = false;
         bool m_has_var   = false; // css_token_vector, parsing is delayed because of var()

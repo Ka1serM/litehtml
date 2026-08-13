@@ -663,6 +663,37 @@ namespace litehtml
         }
     }
 
+    void document::refresh_styles()
+    {
+        if(!m_root)
+        {
+            return;
+        }
+
+        m_root->apply_stylesheet(m_master_css);
+        m_root->apply_stylesheet(m_styles);
+        m_root->apply_stylesheet(m_user_css);
+        m_root->refresh_styles();
+        m_root->compute_styles();
+    }
+
+    void document::rebuild_render_tree()
+    {
+        if(!m_root)
+        {
+            return;
+        }
+
+        m_root_render.reset();
+        m_tabular_elements.clear();
+        m_root_render = m_root->create_render_item(nullptr);
+        fix_tables_layout();
+        if(m_root_render)
+        {
+            m_root_render = m_root_render->init();
+        }
+    }
+
     bool document::on_mouse_over(pixel_t x, pixel_t y, pixel_t client_x, pixel_t client_y,
                                  const std::function<void(const position&)>& redraw_box)
     {
@@ -1158,7 +1189,10 @@ namespace litehtml
         if(replace_existing)
         {
             parent.clearRecursive();
-            parent_render->children().clear();
+            if(parent_render)
+            {
+                parent_render->children().clear();
+            }
         }
 
         // Let's process created elements tree

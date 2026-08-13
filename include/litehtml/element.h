@@ -231,11 +231,15 @@ namespace litehtml
 
     inline std::shared_ptr<render_item> element::get_render_item()
     {
-        if(m_renders.empty())
+        while(!m_renders.empty())
         {
-            return nullptr;
+            if(auto ri = m_renders.back().lock())
+            {
+                return ri;
+            }
+            m_renders.pop_back();
         }
-        return m_renders.front().lock();
+        return nullptr;
     }
 } // namespace litehtml
 

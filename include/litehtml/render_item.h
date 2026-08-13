@@ -55,6 +55,16 @@ namespace litehtml
             return m_scroll_view ? m_scroll_view->get_top() : 0_px;
         }
 
+        pixel_t get_max_scroll_left() const
+        {
+            return m_scroll_view ? m_scroll_view->get_max_h_scroll() : 0_px;
+        }
+
+        pixel_t get_max_scroll_top() const
+        {
+            return m_scroll_view ? m_scroll_view->get_max_v_scroll() : 0_px;
+        }
+
         void scroll_box(position& box) const
         {
             if(m_scroll_view)

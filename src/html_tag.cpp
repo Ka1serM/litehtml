@@ -211,6 +211,14 @@ namespace litehtml
 
             if(apply != select_no_match)
             {
+                const bool already_used = std::any_of(
+                    m_used_styles.begin(), m_used_styles.end(),
+                    [&](const used_selector::ptr& used) { return used && used->m_selector == sel; });
+                if(already_used)
+                {
+                    continue;
+                }
+
                 used_selector::ptr us = std::make_unique<used_selector>(sel, false);
 
                 if(sel->is_media_valid())
