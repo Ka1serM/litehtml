@@ -31,6 +31,14 @@ litehtml::rendered_width litehtml::render_item::render(pixel_t x, pixel_t y,
                                                        const containing_block_context& containing_block_size,
                                                        formatting_context* fmt_ctx, bool second_pass)
 {
+    if(!m_layout_dirty && m_has_layout_cache && !second_pass &&
+       src_el()->is_block_formatting_context() && m_cached_x == x && m_cached_y == y &&
+       m_cached_width == containing_block_size.width.value &&
+       m_cached_height == containing_block_size.height.value)
+    {
+        return m_cached_rendered_width;
+    }
+
     calc_outlines(containing_block_size.width);
 
     m_pos.clear();
@@ -47,12 +55,26 @@ litehtml::rendered_width litehtml::render_item::render(pixel_t x, pixel_t y,
         formatting_context fmt;
         auto               ret = _render(x, y, containing_block_size, &fmt, second_pass);
         fmt.apply_relative_shift(containing_block_size);
+        m_cached_x = x;
+        m_cached_y = y;
+        m_cached_width = containing_block_size.width.value;
+        m_cached_height = containing_block_size.height.value;
+        m_cached_rendered_width = ret;
+        m_has_layout_cache = true;
+        m_layout_dirty = false;
         return ret;
     }
 
     fmt_ctx->push_position(x + content_left, y + content_top);
     auto ret = _render(x, y, containing_block_size, fmt_ctx, second_pass);
     fmt_ctx->pop_position(x + content_left, y + content_top);
+    m_cached_x = x;
+    m_cached_y = y;
+    m_cached_width = containing_block_size.width.value;
+    m_cached_height = containing_block_size.height.value;
+    m_cached_rendered_width = ret;
+    m_has_layout_cache = true;
+    m_layout_dirty = false;
     return ret;
 }
 

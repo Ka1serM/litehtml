@@ -10,7 +10,7 @@ namespace litehtml
     class flex_line
     {
       public:
-        std::list<std::shared_ptr<flex_item>> items;
+        std::vector<std::shared_ptr<flex_item>> items;
         pixel_t                               cross_start = 0; // for row direction: top. for column direction: left
         pixel_t  main_size  = 0; // sum of all items main size, initially the sum of hypothetical main sizes
         pixel_t  cross_size = 0; // sum of all items cross size

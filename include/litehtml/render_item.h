@@ -21,12 +21,19 @@ namespace litehtml
       protected:
         std::shared_ptr<element>                  m_element;
         std::weak_ptr<render_item>                m_parent;
-        std::list<std::shared_ptr<render_item>>   m_children;
+        std::vector<std::shared_ptr<render_item>> m_children;
         margins                                   m_margins;
         margins                                   m_padding;
         margins                                   m_borders;
         position                                  m_pos;
         bool                                      m_skip = false;
+        bool                                      m_layout_dirty = true;
+        bool                                      m_has_layout_cache = false;
+        pixel_t                                   m_cached_x = 0_px;
+        pixel_t                                   m_cached_y = 0_px;
+        pixel_t                                   m_cached_width = 0_px;
+        pixel_t                                   m_cached_height = 0_px;
+        rendered_width                            m_cached_rendered_width;
         std::vector<std::shared_ptr<render_item>> m_positioned;
         std::shared_ptr<scroll_view>              m_scroll_view;
 
@@ -94,7 +101,7 @@ namespace litehtml
             return m_scroll_view ? m_scroll_view->is_v_scrollable(dy) : false;
         }
 
-        std::list<std::shared_ptr<render_item>>& children()
+        std::vector<std::shared_ptr<render_item>>& children()
         {
             return m_children;
         }
@@ -124,6 +131,20 @@ namespace litehtml
         void skip(bool val)
         {
             m_skip = val;
+        }
+
+        void mark_layout_dirty()
+        {
+            const bool already_dirty = m_layout_dirty && !m_has_layout_cache;
+            m_layout_dirty = true;
+            m_has_layout_cache = false;
+            if(!already_dirty)
+            {
+                if(auto parent = m_parent.lock())
+                {
+                    parent->mark_layout_dirty();
+                }
+            }
         }
 
         pixel_t right() const

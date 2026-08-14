@@ -402,10 +402,30 @@ namespace litehtml
             break;
         case GUMBO_NODE_WHITESPACE:
             {
-                std::string str = node->v.text.text;
-                for(size_t i = 0; i < str.length(); i++)
+                // Gumbo can hand us a long whitespace-only node. Keep runs
+                // together; el_space collapses normal whitespace during style
+                // computation, while newlines must remain separate for pre /
+                // pre-line line breaking.
+                const std::string str = node->v.text.text;
+                size_t run_begin = 0;
+                for(size_t i = 0; i < str.size(); ++i)
                 {
+                    if(str[i] != '\n' && str[i] != '\r')
+                    {
+                        continue;
+                    }
+                    if(i > run_begin)
+                    {
+                        elements.push_back(std::make_shared<el_space>(
+                            str.substr(run_begin, i - run_begin).c_str(), shared_from_this()));
+                    }
                     elements.push_back(std::make_shared<el_space>(str.substr(i, 1).c_str(), shared_from_this()));
+                    run_begin = i + 1;
+                }
+                if(run_begin < str.size())
+                {
+                    elements.push_back(std::make_shared<el_space>(
+                        str.substr(run_begin).c_str(), shared_from_this()));
                 }
             }
             break;
@@ -533,6 +553,10 @@ namespace litehtml
     pixel_t document::render(pixel_t max_width, render_type rt)
     {
         pixel_t ret = 0_px;
+        if(m_render_tree_dirty)
+        {
+            rebuild_render_tree();
+        }
         if(m_root && m_root_render)
         {
             position viewport;
@@ -558,6 +582,7 @@ namespace litehtml
                 m_size.width  = 0;
                 m_size.height = 0;
                 m_root_render->calc_document_size(m_size);
+                m_layout_dirty = false;
             }
         }
         return ret;
@@ -660,21 +685,107 @@ namespace litehtml
         if(str && str[0])
         {
             m_css.emplace_back(str, baseurl, media);
+            m_layout_dirty = true;
         }
     }
 
+    void document::begin_update()
+    {
+        ++m_update_depth;
+    }
+
+    void document::end_update()
+    {
+        if(m_update_depth == 0)
+        {
+            return;
+        }
+        --m_update_depth;
+        if(m_update_depth == 0)
+        {
+            flush_updates();
+        }
+    }
+
+    void document::flush_updates()
+    {
+        if(!m_style_update_pending)
+        {
+            return;
+        }
+        m_style_update_pending = false;
+        refresh_styles_now();
+    }
+
     void document::refresh_styles()
+    {
+        if(m_update_depth != 0)
+        {
+            m_style_update_pending = true;
+            return;
+        }
+        refresh_styles_now();
+    }
+
+    void document::refresh_styles_now()
     {
         if(!m_root)
         {
             return;
         }
 
+        m_layout_dirty = true;
+
+        std::vector<std::pair<const element*, style_display>> old_tree;
+        const auto collect_tree = [](const std::shared_ptr<element>& root,
+                                     std::vector<std::pair<const element*, style_display>>& tree) {
+            std::function<void(const std::shared_ptr<element>&)> visit = [&](const std::shared_ptr<element>& el) {
+                if(!el)
+                {
+                    return;
+                }
+                tree.emplace_back(el.get(), el->css().get_display());
+                for(const auto& child : el->children())
+                {
+                    visit(child);
+                }
+            };
+            visit(root);
+        };
+        collect_tree(m_root, old_tree);
+
         m_root->apply_stylesheet(m_master_css);
         m_root->apply_stylesheet(m_styles);
         m_root->apply_stylesheet(m_user_css);
         m_root->refresh_styles();
         m_root->compute_styles();
+        m_root->mark_layout_dirty(true);
+
+        std::vector<std::pair<const element*, style_display>> new_tree;
+        collect_tree(m_root, new_tree);
+        if(old_tree.size() != new_tree.size())
+        {
+            m_render_tree_dirty = true;
+        }
+        else
+        {
+            for(std::size_t index = 0; index < old_tree.size(); ++index)
+            {
+                if(old_tree[index].first != new_tree[index].first ||
+                   old_tree[index].second != new_tree[index].second)
+                {
+                    m_render_tree_dirty = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    bool document::attribute_affects_styles(const char* name) const
+    {
+        return name != nullptr &&
+               (m_master_css.uses_attribute(name) || m_styles.uses_attribute(name) ||
+                m_user_css.uses_attribute(name));
     }
 
     void document::rebuild_render_tree()
@@ -684,6 +795,10 @@ namespace litehtml
             return;
         }
 
+        flush_updates();
+
+        m_render_tree_dirty = false;
+        m_layout_dirty = true;
         m_root_render.reset();
         m_tabular_elements.clear();
         m_root_render = m_root->create_render_item(nullptr);
@@ -913,8 +1028,10 @@ namespace litehtml
         container()->get_media_features(m_media);
         if(update_media_lists(m_media))
         {
+            m_layout_dirty = true;
             m_root->refresh_styles();
             m_root->compute_styles();
+            m_root->mark_layout_dirty(true);
             // The set of rendered elements can change across a media breakpoint
             // (e.g. display:none <-> block on responsive nav/hero blocks). The render
             // tree is built once in createFromString() from the computed display values,
@@ -946,6 +1063,8 @@ namespace litehtml
             }
             m_root->refresh_styles();
             m_root->compute_styles();
+            m_root->mark_layout_dirty(true);
+            m_layout_dirty = true;
             return true;
         }
         return false;
@@ -1018,7 +1137,7 @@ namespace litehtml
     void document::fix_table_children(const std::shared_ptr<render_item>& el_ptr, style_display disp,
                                       const char* disp_str)
     {
-        std::list<std::shared_ptr<render_item>> tmp;
+        std::vector<std::shared_ptr<render_item>> tmp;
         auto                                    first_iter = el_ptr->children().begin();
         auto                                    cur_iter   = el_ptr->children().begin();
 

@@ -217,10 +217,10 @@ litehtml::pixel_t litehtml::line_box::calc_va_baseline(const va_context& current
     }
 }
 
-std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
+std::vector<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
     bool last_box, const containing_block_context& containing_block_size)
 {
-    std::list<std::unique_ptr<line_box_item>> ret_items;
+    std::vector<std::unique_ptr<line_box_item>> ret_items;
     bool                                      finished_with_break = false;
 
     if(!last_box)
@@ -259,40 +259,33 @@ std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
     } else
     {
         // remove trailing spaces
-        auto iter = m_items.rbegin();
-        while(iter != m_items.rend())
+        std::size_t index = m_items.size();
+        while(index > 0)
         {
-            if((*iter)->get_type() == line_box_item::type_text_part)
+            auto& item = m_items[index - 1];
+            if(item->get_type() == line_box_item::type_text_part)
             {
-                if((*iter)->get_el()->src_el()->is_white_space())
+                if(item->get_el()->src_el()->is_white_space())
                 {
-                    (*iter)->get_el()->skip(true);
-                    m_width -= (*iter)->width();
+                    item->get_el()->skip(true);
+                    const pixel_t removed_width = item->width();
+                    m_width -= removed_width;
                     // Space can be between text and inline_end marker
                     // We have to shift all items on the right side
-                    if(iter != m_items.rbegin())
+                    for(std::size_t right = index; right < m_items.size(); ++right)
                     {
-                        auto r_iter = iter;
-                        r_iter--;
-                        while(true)
-                        {
-                            (*r_iter)->pos().x -= (*iter)->width();
-                            if(r_iter == m_items.rbegin())
-                            {
-                                break;
-                            }
-                            r_iter--;
-                        }
+                        m_items[right]->pos().x -= removed_width;
                     }
                     // erase white space element
-                    iter = decltype(iter)(m_items.erase(std::next(iter).base()));
+                    m_items.erase(m_items.begin() + static_cast<std::ptrdiff_t>(index - 1));
+                    --index;
                 } else
                 {
                     break;
                 }
             } else
             {
-                iter++;
+                --index;
             }
         }
     }
@@ -344,7 +337,7 @@ std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
     }
 
     va_context            current_context;
-    std::list<va_context> contexts;
+    std::vector<va_context> contexts;
 
     current_context.baseline    = 0;
     current_context.fm          = m_font_metrics;
@@ -624,7 +617,7 @@ std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
         }
     };
 
-    std::list<inline_item_box> inlines;
+    std::vector<inline_item_box> inlines;
 
     contexts.clear();
 
@@ -712,7 +705,7 @@ std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
         iter->box.width = m_items.back()->right() - iter->box.x;
         iter->element->add_inline_box(iter->box);
 
-        ret_items.emplace_front(std::unique_ptr<line_box_item>(new lbi_continue(iter->element)));
+        ret_items.insert(ret_items.begin(), std::make_unique<lbi_continue>(iter->element));
     }
 
     return ret_items;
@@ -876,9 +869,9 @@ bool litehtml::line_box::is_break_only() const
     return break_found;
 }
 
-std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::new_width(pixel_t left, pixel_t right)
+std::vector<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::new_width(pixel_t left, pixel_t right)
 {
-    std::list<std::unique_ptr<line_box_item>> ret_items;
+    std::vector<std::unique_ptr<line_box_item>> ret_items;
     pixel_t                                   add = left - m_left;
     if(add != 0_px)
     {
@@ -904,11 +897,13 @@ std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::new_widt
         }
         if(remove_begin != m_items.end())
         {
+            const auto erase_begin = remove_begin;
             while(remove_begin != m_items.end())
             {
                 ret_items.emplace_back(std::move(*remove_begin));
+                ++remove_begin;
             }
-            m_items.erase(remove_begin, m_items.end());
+            m_items.erase(erase_begin, m_items.end());
         }
     }
     return ret_items;

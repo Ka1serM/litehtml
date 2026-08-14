@@ -28,7 +28,7 @@ namespace litehtml
         string_vector          m_str_classes;
         std::vector<string_id> m_classes;
         style                  m_style;
-        string_map             m_attrs;
+        attribute_map          m_attrs;
         std::vector<string_id> m_pseudo_classes;
 
         void select_all(const css_selector& selector, elements_list& res) override;

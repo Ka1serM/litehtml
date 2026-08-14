@@ -32,7 +32,7 @@ namespace litehtml
         std::weak_ptr<document>               m_doc;
         elements_list                         m_children;
         css_properties                        m_css;
-        std::list<std::weak_ptr<render_item>> m_renders;
+        std::vector<std::weak_ptr<render_item>> m_renders;
         used_selector::vector                 m_used_styles;
 
         virtual void select_all(const css_selector& selector, elements_list& res);
@@ -67,9 +67,11 @@ namespace litehtml
         bool is_table_skip() const;
 
         std::shared_ptr<document>                  get_document() const;
-        const std::list<std::shared_ptr<element>>& children() const;
+        const elements_list& children() const;
 
         std::shared_ptr<render_item> get_render_item();
+
+        void mark_layout_dirty(bool subtree = true);
 
         virtual elements_list select_all(const std::string& selector);
         virtual elements_list select_all(const css_selector& selector);
@@ -224,7 +226,7 @@ namespace litehtml
                css().get_display() == display_table || css().get_display() == display_list_item;
     }
 
-    inline const std::list<std::shared_ptr<element>>& element::children() const
+    inline const elements_list& element::children() const
     {
         return m_children;
     }

@@ -208,6 +208,9 @@ namespace litehtml
         bool parse(const std::string& text, document_mode mode);
         void calc_specificity();
         bool is_media_valid() const;
+        // Returns true when this selector, including nested :is/:not/:where
+        // selectors, reads the given HTML attribute.
+        bool uses_attribute(string_id attribute) const;
         void add_media_to_doc(document* doc) const;
     };
 

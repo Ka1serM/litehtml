@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <list>
+#include <unordered_map>
 #include <variant>
 #include <algorithm>
 #include "css_values.h"
@@ -20,8 +20,15 @@ namespace litehtml
     class document;
     class element;
 
+    // Keep this public API type ordered: document_container implementations
+    // commonly use it directly.  Internal element attribute storage uses the
+    // separate hash-based attribute_map below.
     using string_map    = std::map<std::string, std::string>;
-    using elements_list = std::list<std::shared_ptr<element>>;
+    using attribute_map = std::unordered_map<std::string, std::string>;
+    // DOM children are traversed far more often than they are spliced.  A
+    // contiguous representation keeps the hot selector and layout walks
+    // cache-friendly and avoids one allocator transaction per child.
+    using elements_list = std::vector<std::shared_ptr<element>>;
     using int_vector    = std::vector<int>;
     using string_vector = std::vector<std::string>;
     using pixel_vector  = std::vector<pixel_t>;

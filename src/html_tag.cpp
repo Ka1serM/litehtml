@@ -38,6 +38,11 @@ namespace litehtml
         {
             el->parent(shared_from_this());
             m_children.push_back(el);
+            mark_layout_dirty(true);
+            if(const auto doc = get_document())
+            {
+                doc->mark_render_tree_dirty();
+            }
             return true;
         }
         return false;
@@ -49,6 +54,11 @@ namespace litehtml
         {
             el->parent(nullptr);
             m_children.erase(std::remove(m_children.begin(), m_children.end(), el), m_children.end());
+            mark_layout_dirty(true);
+            if(const auto doc = get_document())
+            {
+                doc->mark_render_tree_dirty();
+            }
             return true;
         }
         return false;
@@ -56,12 +66,17 @@ namespace litehtml
 
     void litehtml::html_tag::clearRecursive()
     {
+        mark_layout_dirty(true);
         for(auto& el : m_children)
         {
             el->clearRecursive();
             el->parent(nullptr);
         }
         m_children.clear();
+        if(const auto doc = get_document())
+        {
+            doc->mark_render_tree_dirty();
+        }
     }
 
     string_id html_tag::id() const
@@ -82,6 +97,11 @@ namespace litehtml
     void html_tag::set_tagName(const char* tag)
     {
         m_tag = _id(lowcase(tag));
+        mark_layout_dirty(true);
+        if(const auto doc = get_document())
+        {
+            doc->mark_render_tree_dirty();
+        }
     }
 
     void html_tag::set_attr(const char* _name, const char* _val)
@@ -92,6 +112,8 @@ namespace litehtml
             std::string name = lowcase(_name);
             // m_attrs has all attribute values, including class and id, in their original case
             // because in attribute selector values are matched case-sensitively even in quirks mode
+            const auto old_attr = m_attrs.find(name);
+            const bool changed = old_attr == m_attrs.end() || old_attr->second != _val;
             m_attrs[name] = _val;
 
             if(name == "class")
@@ -117,6 +139,14 @@ namespace litehtml
                     lcase(val);
                 }
                 m_id = _id(val);
+            }
+
+            if(changed)
+            {
+                // Attribute selectors, inherited properties, and inline
+                // styles can all change geometry. The render item propagates
+                // this to cached ancestors.
+                mark_layout_dirty(true);
             }
         }
     }
@@ -187,7 +217,9 @@ namespace litehtml
 
     void litehtml::html_tag::apply_stylesheet(const litehtml::css& stylesheet)
     {
-        for(const auto& sel : stylesheet.selectors())
+        css_selector::vector candidates;
+        stylesheet.candidate_selectors(m_tag, m_id, m_classes, candidates);
+        for(const auto& sel : candidates)
         {
             // optimization
             {
@@ -1034,6 +1066,10 @@ namespace litehtml
                 m_pseudo_classes.erase(pi);
                 ret = true;
             }
+        }
+        if(ret)
+        {
+            mark_layout_dirty(true);
         }
         return ret;
     }

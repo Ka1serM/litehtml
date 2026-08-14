@@ -31,6 +31,7 @@ void litehtml::el_text::set_data(const char* data)
     m_transformed_text.clear();
     m_use_transformed = false;
     compute_styles(false);
+    mark_layout_dirty(false);
 }
 
 void litehtml::el_text::compute_styles(bool /*recursive*/)

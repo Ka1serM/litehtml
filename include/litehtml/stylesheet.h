@@ -1,6 +1,7 @@
 #ifndef LITEHTML_STYLESHEET_H
 #define LITEHTML_STYLESHEET_H
 
+#include <unordered_map>
 #include <utility>
 
 #include "css_selector.h"
@@ -61,12 +62,21 @@ namespace litehtml
     class css
     {
         css_selector::vector m_selectors;
+        std::unordered_map<string_id, css_selector::vector> m_tag_index;
+        std::unordered_map<string_id, css_selector::vector> m_id_index;
+        std::unordered_map<string_id, css_selector::vector> m_class_index;
+        css_selector::vector m_universal_selectors;
 
       public:
         const css_selector::vector& selectors() const
         {
             return m_selectors;
         }
+
+        bool uses_attribute(const char* name) const;
+
+        void candidate_selectors(string_id tag, string_id id, const std::vector<string_id>& classes,
+                                 css_selector::vector& result) const;
 
         template <class Input>
         void parse_css_stylesheet(const Input& input, const std::string& baseurl, const std::shared_ptr<document>& doc,

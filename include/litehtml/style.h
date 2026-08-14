@@ -1,6 +1,8 @@
 #ifndef LITEHTML_STYLE_H
 #define LITEHTML_STYLE_H
 
+#include <unordered_map>
+
 #include "background.h"
 #include "css_control.h"
 #include "css_length.h"
@@ -37,7 +39,7 @@ namespace litehtml
     };
 
     class html_tag;
-    using props_map = std::map<string_id, property_value>;
+    using props_map = std::unordered_map<string_id, property_value>;
 
     // represents a style block, eg. "color: black; display: inline"
     class style

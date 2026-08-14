@@ -23,6 +23,28 @@ namespace litehtml
     {
     }
 
+    void element::mark_layout_dirty(bool subtree)
+    {
+        if(const auto doc = get_document())
+        {
+            doc->mark_layout_dirty();
+        }
+        for(const auto& weak_ri : m_renders)
+        {
+            if(auto ri = weak_ri.lock())
+            {
+                ri->mark_layout_dirty();
+            }
+        }
+        if(subtree)
+        {
+            for(const auto& child : m_children)
+            {
+                child->mark_layout_dirty(true);
+            }
+        }
+    }
+
     position element::get_placement() const
     {
         position pos;

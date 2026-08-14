@@ -82,7 +82,7 @@ litehtml::rendered_width litehtml::render_item_flex::_render_content(pixel_t x, 
         sum_main_size   = std::max(sum_main_size, ln.main_size);
         if(reverse)
         {
-            ln.items.reverse();
+            std::reverse(ln.items.begin(), ln.items.end());
         }
     }
 
@@ -163,7 +163,7 @@ litehtml::rendered_width litehtml::render_item_flex::_render_content(pixel_t x, 
     /// Reverse lines for flex-wrap: wrap-reverse
     if(css().get_flex_wrap() == flex_wrap_wrap_reverse)
     {
-        m_lines.reverse();
+        std::reverse(m_lines.begin(), m_lines.end());
     }
 
     /////////////////////////////////////////////////////////////////
@@ -238,7 +238,7 @@ litehtml::rendered_width litehtml::render_item_flex::_render_content(pixel_t x, 
     return {ret_width, ret_width};
 }
 
-std::list<litehtml::flex_line> litehtml::render_item_flex::get_lines(
+std::vector<litehtml::flex_line> litehtml::render_item_flex::get_lines(
     const litehtml::containing_block_context& self_size, litehtml::formatting_context* fmt_ctx, bool is_row_direction,
     pixel_t container_main_size, bool single_line)
 {
@@ -253,9 +253,9 @@ std::list<litehtml::flex_line> litehtml::render_item_flex::get_lines(
         reverse_main = css().get_flex_direction() == flex_direction_column_reverse;
     }
 
-    std::list<flex_line>                  lines;
+    std::vector<flex_line>                lines;
     flex_line                             line(reverse_main, reverse_cross);
-    std::list<std::shared_ptr<flex_item>> items;
+    std::vector<std::shared_ptr<flex_item>> items;
     int                                   src_order     = 0;
     bool                                  sort_required = false;
     def_value<int>                        prev_order(0);
@@ -286,7 +286,8 @@ std::list<litehtml::flex_line> litehtml::render_item_flex::get_lines(
 
     if(sort_required)
     {
-        items.sort([](const std::shared_ptr<flex_item>& item1, const std::shared_ptr<flex_item>& item2) {
+        std::sort(items.begin(), items.end(), [](const std::shared_ptr<flex_item>& item1,
+                                                const std::shared_ptr<flex_item>& item2) {
             if(item1->order < item2->order)
             {
                 return true;

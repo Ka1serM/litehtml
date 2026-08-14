@@ -8,6 +8,28 @@
 namespace litehtml
 {
 
+    bool css_selector::uses_attribute(string_id attribute) const
+    {
+        for(const auto& selector : {&m_right})
+        {
+            for(const auto& attr : selector->m_attrs)
+            {
+                if(attr.type == select_attr && attr.name == attribute)
+                {
+                    return true;
+                }
+                for(const auto& nested : attr.selector_list)
+                {
+                    if(nested && nested->uses_attribute(attribute))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return m_left && m_left->uses_attribute(attribute);
+    }
+
     void css_selector::calc_specificity()
     {
         if(m_right.m_tag != star_id)

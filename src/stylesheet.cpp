@@ -7,6 +7,72 @@
 namespace litehtml
 {
 
+    bool css::uses_attribute(const char* name) const
+    {
+        if(name == nullptr || *name == '\0')
+        {
+            return false;
+        }
+        const string_id attribute = _id(name);
+        return std::any_of(m_selectors.begin(), m_selectors.end(),
+                           [attribute](const css_selector::ptr& selector) {
+                               return selector && selector->uses_attribute(attribute);
+                           });
+    }
+
+    void css::candidate_selectors(string_id tag, string_id id, const std::vector<string_id>& classes,
+                                  css_selector::vector& result) const
+    {
+        std::vector<const css_selector::vector*> sources;
+        sources.reserve(classes.size() + 3);
+        sources.push_back(&m_universal_selectors);
+        if(const auto found = m_tag_index.find(tag); found != m_tag_index.end())
+        {
+            sources.push_back(&found->second);
+        }
+        if(const auto found = m_id_index.find(id); found != m_id_index.end())
+        {
+            sources.push_back(&found->second);
+        }
+        for(const string_id cls : classes)
+        {
+            if(const auto found = m_class_index.find(cls); found != m_class_index.end())
+            {
+                sources.push_back(&found->second);
+            }
+        }
+
+        // Every index is populated while walking the already-sorted selector
+        // list. Merge those runs instead of sorting the union for every DOM
+        // element during style application.
+        result.clear();
+        css_selector::vector scratch;
+        for(const auto* source : sources)
+        {
+            if(source->empty())
+            {
+                continue;
+            }
+            if(result.empty())
+            {
+                result = *source;
+                continue;
+            }
+            scratch.clear();
+            scratch.reserve(result.size() + source->size());
+            std::merge(result.begin(), result.end(), source->begin(), source->end(),
+                       std::back_inserter(scratch), [](const css_selector::ptr& lhs, const css_selector::ptr& rhs) {
+                           return *lhs < *rhs;
+                       });
+            result.swap(scratch);
+        }
+        result.erase(std::unique(result.begin(), result.end(),
+                                 [](const css_selector::ptr& lhs, const css_selector::ptr& rhs) {
+                                     return lhs == rhs;
+                                 }),
+                     result.end());
+    }
+
     // ( <declaration> )  https://drafts.csswg.org/css-conditional-3/#typedef-supports-decl
     static bool eval_supports_declaration(const css_token_vector& tokens, document_container* container)
     {
@@ -308,6 +374,41 @@ namespace litehtml
     {
         std::sort(m_selectors.begin(), m_selectors.end(),
                   [](const css_selector::ptr& v1, const css_selector::ptr& v2) { return (*v1) < (*v2); });
+
+        m_tag_index.clear();
+        m_id_index.clear();
+        m_class_index.clear();
+        m_universal_selectors.clear();
+        for(const auto& selector : m_selectors)
+        {
+            if(!selector)
+            {
+                continue;
+            }
+            bool indexed = false;
+            if(selector->m_right.m_tag != empty_id && selector->m_right.m_tag != star_id)
+            {
+                m_tag_index[selector->m_right.m_tag].push_back(selector);
+                indexed = true;
+            }
+            for(const auto& attr : selector->m_right.m_attrs)
+            {
+                if(attr.type == select_id)
+                {
+                    m_id_index[attr.name].push_back(selector);
+                    indexed = true;
+                }
+                else if(attr.type == select_class)
+                {
+                    m_class_index[attr.name].push_back(selector);
+                    indexed = true;
+                }
+            }
+            if(!indexed)
+            {
+                m_universal_selectors.push_back(selector);
+            }
+        }
     }
 
 } // namespace litehtml

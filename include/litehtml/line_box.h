@@ -187,7 +187,7 @@ namespace litehtml
         text_align        m_text_align;
         rendered_width    m_rendered_width;
 
-        std::list<std::unique_ptr<line_box_item>> m_items;
+        std::vector<std::unique_ptr<line_box_item>> m_items;
 
       public:
         line_box(pixel_t top, pixel_t left, pixel_t right, const css_line_height_t& line_height, const font_metrics& fm,
@@ -245,12 +245,12 @@ namespace litehtml
         pixel_t bottom_margin() const;
         void    y_shift(pixel_t shift);
 
-        std::list<std::unique_ptr<line_box_item>>  finish(bool                            last_box,
-                                                          const containing_block_context& containing_block_size);
-        std::list<std::unique_ptr<line_box_item>>  new_width(pixel_t left, pixel_t right);
+        std::vector<std::unique_ptr<line_box_item>> finish(bool                            last_box,
+                                                           const containing_block_context& containing_block_size);
+        std::vector<std::unique_ptr<line_box_item>> new_width(pixel_t left, pixel_t right);
         std::shared_ptr<render_item>               get_last_text_part() const;
         std::shared_ptr<render_item>               get_first_text_part() const;
-        std::list<std::unique_ptr<line_box_item>>& items()
+        std::vector<std::unique_ptr<line_box_item>>& items()
         {
             return m_items;
         }
