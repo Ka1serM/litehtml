@@ -2,7 +2,7 @@
 #define LITEHTML_ITERATORS_H
 
 #include "types.h"
-#include <functional>
+#include "render_item.h"
 
 namespace litehtml
 {
@@ -43,11 +43,37 @@ namespace litehtml
         elements_iterator(bool return_parents, iterator_selector* go_inside, iterator_selector* select);
         ~elements_iterator() = default;
 
-        void process(const std::shared_ptr<render_item>&                                           container,
-                     const std::function<void(std::shared_ptr<render_item>&, iterator_item_type)>& func);
+        template<typename Func>
+        void process(const std::shared_ptr<render_item>& container, Func&& func)
+        {
+            process_impl(container, func);
+        }
 
       private:
         void next_idx();
+
+        template<typename Func>
+        void process_impl(const std::shared_ptr<render_item>& container, Func& func)
+        {
+            for(auto& el : container->children())
+            {
+                if(go_inside(el))
+                {
+                    if(m_return_parent)
+                    {
+                        func(el, iterator_item_type_start_parent);
+                    }
+                    process_impl(el, func);
+                    if(m_return_parent)
+                    {
+                        func(el, iterator_item_type_end_parent);
+                    }
+                } else if(!m_select || m_select->select(el))
+                {
+                    func(el, iterator_item_type_child);
+                }
+            }
+        }
     };
 
     class go_inside_inline final : public iterator_selector

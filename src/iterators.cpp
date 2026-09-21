@@ -14,37 +14,6 @@ bool litehtml::elements_iterator::go_inside(const std::shared_ptr<render_item>& 
     return /*!el->children().empty() &&*/ m_go_inside && m_go_inside->select(el);
 }
 
-void litehtml::elements_iterator::process(
-    const std::shared_ptr<render_item>&                                           container,
-    const std::function<void(std::shared_ptr<render_item>&, iterator_item_type)>& func)
-{
-    for(auto& el : container->children())
-    {
-        if(go_inside(el))
-        {
-            if(m_return_parent)
-            {
-                // call function for parent
-                func(el, iterator_item_type_start_parent);
-            }
-            // go inside element and process its items
-            process(el, func);
-            if(m_return_parent)
-            {
-                // call function for parent
-                func(el, iterator_item_type_end_parent);
-            }
-        } else
-        {
-            // call function for element
-            if(!m_select || m_select->select(el))
-            {
-                func(el, iterator_item_type_child);
-            }
-        }
-    }
-}
-
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 

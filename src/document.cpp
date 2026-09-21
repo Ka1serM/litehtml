@@ -27,6 +27,8 @@
 #include "render_table.h"
 #include "stylesheet.h"
 #include "types.h"
+#include <cstdio>
+#include <cstdlib>
 
 namespace litehtml
 {
@@ -315,6 +317,7 @@ namespace litehtml
         switch(node->type)
         {
         case GUMBO_NODE_ELEMENT:
+        case GUMBO_NODE_TEMPLATE:
             {
                 if(process_root)
                 {
@@ -552,6 +555,8 @@ namespace litehtml
 
     pixel_t document::render(pixel_t max_width, render_type rt)
     {
+        const bool profile_layout = std::getenv("LITEHTML_LAYOUT_PROFILE") != nullptr;
+        if(profile_layout) render_item::reset_layout_profile();
         pixel_t ret = 0_px;
         if(m_render_tree_dirty)
         {
@@ -571,19 +576,41 @@ namespace litehtml
             {
                 m_fixed_boxes.clear();
                 m_root_render->render_positioned(rt);
+                m_root_render->finish_layout();
             } else
             {
                 ret = m_root_render->render(0_px, 0_px, cb_context, nullptr).natural_width;
+                // Positioned boxes are placed against their containing blocks'
+                // final subtrees, and a deferred subtree layout would reset them,
+                // so finish before placing them and again for boxes they detach.
+                m_root_render->finish_layout();
                 if(m_root_render->fetch_positioned())
                 {
                     m_fixed_boxes.clear();
                     m_root_render->render_positioned(rt);
                 }
+                m_root_render->finish_layout();
                 m_size.width  = 0;
                 m_size.height = 0;
                 m_root_render->calc_document_size(m_size);
                 m_layout_dirty = false;
             }
+        }
+        if(profile_layout)
+        {
+            const auto profile = render_item::get_layout_profile();
+            std::fprintf(stderr,
+                         "[litehtml profile] calls=%llu layout-hits=%llu cache-hits=%llu renders=%llu "
+                         "materialized=%llu dirty-misses=%llu constraint-misses=%llu uncached=%llu\n",
+                         static_cast<unsigned long long>(profile.render_calls),
+                         static_cast<unsigned long long>(profile.layout_hits),
+                         static_cast<unsigned long long>(profile.cache_hits),
+                         static_cast<unsigned long long>(profile.actual_renders),
+                         static_cast<unsigned long long>(profile.materialized),
+                         static_cast<unsigned long long>(profile.dirty_misses),
+                         static_cast<unsigned long long>(profile.constraint_misses),
+                         static_cast<unsigned long long>(profile.uncached_renders));
+            render_item::dump_layout_trace();
         }
         return ret;
     }
@@ -786,6 +813,18 @@ namespace litehtml
         return name != nullptr &&
                (m_master_css.uses_attribute(name) || m_styles.uses_attribute(name) ||
                 m_user_css.uses_attribute(name));
+    }
+
+    void document::refresh_element_styles(element& el)
+    {
+        // Clear styles from the target and its pseudo-elements first, then
+        // re-apply every stylesheet so newly matching attribute/class rules
+        // can be registered in the target's used-selector set.
+        el.refresh_styles();
+        el.apply_stylesheet(m_master_css);
+        el.apply_stylesheet(m_styles);
+        el.apply_stylesheet(m_user_css);
+        el.compute_styles();
     }
 
     void document::rebuild_render_tree()
@@ -1345,6 +1384,13 @@ namespace litehtml
                     parent_render->add_child(child_render);
                 }
             }
+        }
+        // DOM insertion changes the inputs of every cached containing block
+        // above the parent. Do not let a same-constraint layout restore a
+        // subtree snapshot captured before these children existed.
+        if(parent_render)
+        {
+            parent_render->invalidate_layout();
         }
         // Now the m_tabular_elements is filled with tabular elements.
         // We have to check the tabular elements for missing table elements

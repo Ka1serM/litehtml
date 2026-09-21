@@ -23,26 +23,35 @@ namespace litehtml
     {
     }
 
-    void element::mark_layout_dirty(bool subtree)
+    void element::set_visible(bool visible)
     {
-        if(const auto doc = get_document())
+        if(m_hidden == !visible) return;
+        m_hidden = !visible;
+        for(const auto& weak_render : m_renders)
         {
-            doc->mark_layout_dirty();
+            if(const auto render = weak_render.lock()) render->invalidate_layout();
         }
-        for(const auto& weak_ri : m_renders)
+        const auto owner = parent();
+        update_visibility(owner ? owner->is_visible() : true);
+    }
+
+    void element::update_visibility(bool parent_visible)
+    {
+        m_effective_visible = parent_visible && !m_hidden;
+        for(const auto& child : m_children)
         {
-            if(auto ri = weak_ri.lock())
-            {
-                ri->mark_layout_dirty();
-            }
+            if(child) child->update_visibility(m_effective_visible);
         }
-        if(subtree)
+    }
+
+    bool element::is_visible() const
+    {
+        if(m_anonymous)
         {
-            for(const auto& child : m_children)
-            {
-                child->mark_layout_dirty(true);
-            }
+            const auto owner = parent();
+            return !owner || owner->is_visible();
         }
+        return m_effective_visible;
     }
 
     position element::get_placement() const
@@ -185,6 +194,10 @@ namespace litehtml
             ret->parent(parent_ri);
             for(const auto& el : m_children)
             {
+                // Keep hidden subtrees attached to stable render items.
+                // render_item visibility gates layout, paint, and hit testing;
+                // retaining the objects lets DOM appends attach incrementally
+                // and lets layout caches survive a panel switch.
                 auto ri = el->create_render_item(ret);
                 if(ri)
                 {
@@ -495,6 +508,11 @@ namespace litehtml
     void        element::set_tagName(const char* /*tag*/) LITEHTML_EMPTY_FUNC;
     void        element::set_data(const char* /*data*/) LITEHTML_EMPTY_FUNC;
     void        element::set_attr(const char* /*name*/, const char* /*val*/) LITEHTML_EMPTY_FUNC;
+    const string_map& element::attributes() const
+    {
+        static const string_map empty;
+        return empty;
+    }
     void        element::apply_stylesheet(const litehtml::css& /*stylesheet*/) LITEHTML_EMPTY_FUNC;
     void        element::refresh_styles() LITEHTML_EMPTY_FUNC;
     void        element::on_click() LITEHTML_EMPTY_FUNC;

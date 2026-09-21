@@ -358,6 +358,7 @@ namespace litehtml
             size_mode_exact_width  = 0x01,
             size_mode_exact_height = 0x02,
             size_mode_content      = 0x04,
+            size_mode_measure      = 0x08, // result is read back as a size and then re-rendered
         };
 
         struct typed_pixel
@@ -385,6 +386,11 @@ namespace litehtml
             }
 
             typed_pixel& operator=(const typed_pixel& v) = default;
+
+            bool operator==(const typed_pixel& v) const
+            {
+                return value == v.value && type == v.type;
+            }
         };
 
         typed_pixel width        = {0_px, cbc_value_type_auto}; // width of the containing block
@@ -398,6 +404,20 @@ namespace litehtml
 
         int      context_idx = 0;
         uint32_t size_mode   = size_mode_normal;
+
+        bool operator==(const containing_block_context& v) const
+        {
+            return width == v.width && render_width == v.render_width && min_width == v.min_width &&
+                   max_width == v.max_width && height == v.height && min_height == v.min_height &&
+                   max_height == v.max_height && context_idx == v.context_idx && size_mode == v.size_mode;
+        }
+
+        containing_block_context measured() const
+        {
+            containing_block_context ret = *this;
+            ret.size_mode               |= size_mode_measure;
+            return ret;
+        }
 
         containing_block_context new_width(pixel_t w, uint32_t _size_mode = size_mode_normal) const
         {

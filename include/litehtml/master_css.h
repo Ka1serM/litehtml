@@ -9,7 +9,7 @@ html {
 	display: block;
 }
 
-head {
+head, template {
 	display: none
 }
 

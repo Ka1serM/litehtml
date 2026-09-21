@@ -34,3 +34,4 @@ namespace litehtml
 } // namespace litehtml
 
 #endif // LITEHTML_RENDER_FLEX_H
+#include <vector>

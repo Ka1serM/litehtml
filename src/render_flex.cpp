@@ -256,12 +256,19 @@ std::vector<litehtml::flex_line> litehtml::render_item_flex::get_lines(
     std::vector<flex_line>                lines;
     flex_line                             line(reverse_main, reverse_cross);
     std::vector<std::shared_ptr<flex_item>> items;
+    items.reserve(m_children.size());
+
     int                                   src_order     = 0;
     bool                                  sort_required = false;
     def_value<int>                        prev_order(0);
 
     for(auto& el : m_children)
     {
+        if(el->hidden())
+        {
+            continue;
+        }
+
         std::shared_ptr<flex_item> item = nullptr;
         if(is_row_direction)
         {
@@ -281,7 +288,7 @@ std::vector<litehtml::flex_line> litehtml::render_item_flex::get_lines(
             sort_required = true;
         }
 
-        items.emplace_back(item);
+        items.push_back(item);
     }
 
     if(sort_required)
@@ -305,7 +312,7 @@ std::vector<litehtml::flex_line> litehtml::render_item_flex::get_lines(
     {
         if(!line.items.empty() && !single_line && line.main_size + item->main_size > container_main_size)
         {
-            lines.emplace_back(line);
+            lines.push_back(std::move(line));
             line = flex_line(reverse_main, reverse_cross);
         }
         line.base_size += item->base_size;
@@ -323,13 +330,20 @@ std::vector<litehtml::flex_line> litehtml::render_item_flex::get_lines(
     // Add the last line to the lines list
     if(!line.items.empty())
     {
-        lines.emplace_back(line);
+        lines.push_back(std::move(line));
     }
     return lines;
 }
 
 std::shared_ptr<litehtml::render_item> litehtml::render_item_flex::init()
 {
+    // Flex init replaces the child list with the normalized flex layout tree,
+    // so it cannot use render_item::init(). Register the flex item explicitly
+    // just like the block and table specializations do. Without this, DOM
+    // callers get no render item for flex panels and visibility invalidation
+    // cannot reach their containing layout.
+    src_el()->add_render(shared_from_this());
+
     auto                 doc = src_el()->get_document();
     decltype(m_children) new_children;
     decltype(m_children) inlines;

@@ -17,6 +17,12 @@ litehtml::rendered_width litehtml::render_item_block_context::_render_content(pi
     bool           is_first    = true;
     for(const auto& el : m_children)
     {
+        // Host-hidden tab panels stay mounted in the DOM, but must not enter
+        // block layout. Their existing placement remains available for the
+        // next activation.
+        if(el->hidden() || !el->src_el()->is_visible())
+            continue;
+
         // we don't need to process absolute and fixed positioned element on the second pass
         if(second_pass)
         {

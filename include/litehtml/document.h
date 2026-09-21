@@ -66,7 +66,7 @@ namespace litehtml
         position::vector                        m_fixed_boxes;
         std::shared_ptr<element>                m_over_element;
         std::shared_ptr<element>                m_active_element;
-        std::vector<std::shared_ptr<render_item>> m_tabular_elements;
+        std::list<std::shared_ptr<render_item>> m_tabular_elements;
         media_query_list_list::vector           m_media_lists;
         media_features                          m_media;
         std::string                             m_lang;
@@ -74,12 +74,6 @@ namespace litehtml
         std::string                             m_text;
         document_mode                           m_mode      = no_quirks_mode;
         bool                                    m_finalized = false;
-        std::uint32_t                           m_update_depth = 0;
-        bool                                    m_style_update_pending = false;
-        bool                                    m_render_tree_dirty = false;
-        bool                                    m_layout_dirty = true;
-
-        void refresh_styles_now();
 
       public:
         document(document_container* objContainer);
@@ -107,30 +101,11 @@ namespace litehtml
         pixel_t                      content_width() const;
         pixel_t                      content_height() const;
         void                         add_stylesheet(const char* str, const char* baseurl, const char* media);
-        void                         begin_update();
-        void                         end_update();
-        void                         flush_updates();
         void                         refresh_styles();
-        // Fast dependency query used by DOM mutation code. Attributes which
-        // cannot participate in any selector do not require a style walk.
-        bool                         attribute_affects_styles(const char* name) const;
-        void                         mark_render_tree_dirty()
-        {
-            m_render_tree_dirty = true;
-            m_layout_dirty = true;
-        }
-        void                         mark_layout_dirty()
-        {
-            m_layout_dirty = true;
-        }
-        bool                         layout_dirty() const
-        {
-            return m_layout_dirty;
-        }
-        bool                         render_tree_dirty() const
-        {
-            return m_render_tree_dirty;
-        }
+        // Re-evaluate all document stylesheets for one mutated subtree. This
+        // is needed when a runtime class/attribute starts matching a selector
+        // that did not match when the stylesheet was first applied.
+        void                         refresh_element_styles(element& el);
         void                         rebuild_render_tree();
         bool                         on_mouse_over(pixel_t x, pixel_t y, pixel_t client_x, pixel_t client_y,
                                                    const std::function<void(const position&)>& redraw_box);

@@ -205,7 +205,7 @@ void litehtml::flex_item_row_direction::direction_specific_init(const litehtml::
             base_size = content_size;
             break;
         case flex_basis_max_content:
-            el->render(0_px, 0_px, self_size, fmt_ctx);
+            el->render(0_px, 0_px, self_size.measured(), fmt_ctx);
             base_size = el->width();
             break;
         default:
@@ -278,9 +278,25 @@ void litehtml::flex_item_row_direction::align_stretch(flex_line& ln, const conta
     set_cross_position(ln.cross_start);
     if(el->css().get_height().is_predefined())
     {
+        if(el->can_stretch_without_reflow())
+        {
+            // The width reflow in flex_line::init already produced the
+            // intrinsic content geometry. For an auto-height block with no
+            // height-dependent descendants, flex stretch changes only the
+            // outer block size; repeating the entire subtree reflow is
+            // redundant.
+            // A line shorter than the item's padding+border floors the
+            // content box at zero; the box then overflows the line.
+            el->pos().height = std::max(ln.cross_size - el->get_margins().height() - el->get_paddings().height() -
+                                            el->get_borders().height(),
+                                        0_px);
+            apply_main_auto_margins();
+            return;
+        }
         el->render(el->left(), el->top(),
                    self_size.new_width_height(el->pos().width + el->box_sizing_width(),
-                                              ln.cross_size - el->content_offset_height() + el->box_sizing_height(),
+                                              std::max(ln.cross_size - el->content_offset_height(), 0_px) +
+                                                  el->box_sizing_height(),
                                               containing_block_context::size_mode_exact_width |
                                                   containing_block_context::size_mode_exact_height),
                    fmt_ctx);
@@ -374,7 +390,7 @@ void litehtml::flex_item_column_direction::direction_specific_init(const litehtm
             break;
         case flex_basis_max_content:
         case flex_basis_fit_content:
-            el->render(0_px, 0_px, self_size, fmt_ctx);
+            el->render(0_px, 0_px, self_size.measured(), fmt_ctx);
             base_size = el->height();
             break;
         case flex_basis_min_content:
@@ -459,18 +475,20 @@ void litehtml::flex_item_column_direction::align_stretch(flex_line& ln, const co
 {
     /// MAIN:  Y
     /// CROSS: X
+    const pixel_t content_width  = std::max(ln.cross_size - el->content_offset_width(), 0_px);
+    const pixel_t content_height = std::max(main_size - el->content_offset_height(), 0_px);
     if(!el->css().get_width().is_predefined())
     {
         el->render(ln.cross_start, el->pos().y - el->content_offset_top(),
-                   self_size.new_width_height(ln.cross_size - el->content_offset_width() + el->box_sizing_width(),
-                                              main_size - el->content_offset_height() + el->box_sizing_height(),
+                   self_size.new_width_height(content_width + el->box_sizing_width(),
+                                              content_height + el->box_sizing_height(),
                                               containing_block_context::size_mode_exact_height),
                    fmt_ctx, false);
     } else
     {
         el->render(ln.cross_start, el->pos().y - el->content_offset_top(),
-                   self_size.new_width_height(ln.cross_size - el->content_offset_width() + el->box_sizing_width(),
-                                              main_size - el->content_offset_height() + el->box_sizing_height(),
+                   self_size.new_width_height(content_width + el->box_sizing_width(),
+                                              content_height + el->box_sizing_height(),
                                               containing_block_context::size_mode_exact_width |
                                                   containing_block_context::size_mode_exact_height),
                    fmt_ctx, false);

@@ -495,6 +495,13 @@ namespace litehtml
             "focus",
             "focus-visible",
             "focus-within",
+            // Input state pseudo-classes. Their dynamic state is supplied by
+            // the embedding user agent through element::set_pseudo_class().
+            "checked",
+            "unchecked",
+            "indeterminate",
+            "enabled",
+            "disabled",
             // Tree-Structural pseudo-classes  https://www.w3.org/TR/selectors-4/#structural-pseudos
             "root",
             "empty",

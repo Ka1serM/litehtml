@@ -34,9 +34,18 @@ namespace litehtml
         css_properties                        m_css;
         std::vector<std::weak_ptr<render_item>> m_renders;
         used_selector::vector                 m_used_styles;
+        // m_hidden is the element's own host-managed state. The effective
+        // state is propagated when the DOM changes, so render hot paths do not
+        // have to walk the ancestor chain for every element.
+        bool                                  m_hidden            = false;
+        bool                                  m_effective_visible = true;
+        // Anonymous wrapper boxes are not DOM children, so visibility updates
+        // never reach them. They follow their parent instead.
+        bool                                  m_anonymous         = false;
 
         virtual void select_all(const css_selector& selector, elements_list& res);
         element::ptr _add_before_after(int type, const style& style);
+        void         update_visibility(bool parent_visible);
 
       private:
         std::map<string_id, int> m_counter_values;
@@ -91,6 +100,17 @@ namespace litehtml
 
         virtual void        set_attr(const char* name, const char* val);
         virtual const char* get_attr(const char* name, const char* def = nullptr) const;
+        virtual const string_map& attributes() const;
+        // Host-managed visibility for persistent UI panels. This is separate
+        // from CSS so deferred stylesheet refresh cannot leave a hidden panel
+        // in the render tree. is_visible() includes ancestor visibility, so a
+        // hidden panel also hides every descendant from layout, paint, and hit
+        // testing. Descendants receive the cached effective state when this
+        // element is attached or its visibility changes.
+        virtual void        set_visible(bool visible);
+        void                set_hidden(bool hidden) { set_visible(!hidden); }
+        bool                is_visible() const;
+        bool                is_hidden() const { return !is_visible(); }
         virtual void        apply_stylesheet(const litehtml::css& stylesheet);
         virtual void        refresh_styles();
         virtual bool        is_white_space() const;
@@ -193,6 +213,7 @@ namespace litehtml
     inline void litehtml::element::parent(const element::ptr& par)
     {
         m_parent = par;
+        update_visibility(par ? par->is_visible() : true);
     }
 
     inline bool litehtml::element::is_positioned() const

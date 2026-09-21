@@ -44,3 +44,4 @@ namespace litehtml
 } // namespace litehtml
 
 #endif // LITEHTML_FLEX_LINE_H
+#include <vector>

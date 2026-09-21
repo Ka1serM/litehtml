@@ -423,6 +423,17 @@ namespace litehtml
     };
 
     // ==========================================================
+    // CSS Property: text-overflow
+    // ==========================================================
+    inline constexpr auto text_overflow_strings = split_css_values<2>("clip;ellipsis");
+
+    enum text_overflow
+    {
+        text_overflow_clip,
+        text_overflow_ellipsis
+    };
+
+    // ==========================================================
     // CSS Property: overflow
     // ==========================================================
     inline constexpr auto overflow_strings = split_css_values<6>("visible;hidden;scroll;auto;no-display;no-content");

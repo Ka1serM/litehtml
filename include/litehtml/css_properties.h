@@ -40,6 +40,7 @@ namespace litehtml
         scrollbar_width       m_scrollbar_width = scrollbar_width_auto;
         css_accent_color      m_accent_color;
         white_space           m_white_space    = white_space_normal;
+        text_overflow         m_text_overflow  = text_overflow_clip;
         style_display         m_display        = display_inline;
         visibility            m_visibility     = visibility_visible;
         appearance            m_appearance     = appearance_none;
@@ -128,6 +129,9 @@ namespace litehtml
 
         white_space get_white_space() const;
         void        set_white_space(white_space mWhiteSpace);
+
+        text_overflow get_text_overflow() const;
+        void          set_text_overflow(text_overflow mTextOverflow);
 
         style_display get_display() const;
         void          set_display(style_display mDisplay);
@@ -313,6 +317,16 @@ namespace litehtml
     inline void css_properties::set_white_space(white_space mWhiteSpace)
     {
         m_white_space = mWhiteSpace;
+    }
+
+    inline text_overflow css_properties::get_text_overflow() const
+    {
+        return m_text_overflow;
+    }
+
+    inline void css_properties::set_text_overflow(text_overflow mTextOverflow)
+    {
+        m_text_overflow = mTextOverflow;
     }
 
     inline style_display css_properties::get_display() const

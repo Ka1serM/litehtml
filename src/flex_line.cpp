@@ -191,7 +191,11 @@ void litehtml::flex_line::distribute_free_space_shrink(pixel_t container_main_si
         // If the remaining free space is zero
         // Do nothing.
 
-        if(remaining_free_space != 0_px)
+        // Unfrozen items whose scaled shrink factors all sum to zero (e.g. every
+        // one has a zero flex base size) cannot absorb any negative free space;
+        // they keep their base size and the line overflows. Dividing here would
+        // produce NaN sizes that poison every later sibling position.
+        if(remaining_free_space != 0_px && sum_scaled_flex_shrink_factor != 0_px)
         {
             for(auto& item : items)
             {
@@ -449,7 +453,12 @@ void litehtml::flex_line::init(pixel_t container_main_size, bool fit_container, 
         def_value<pixel_t> max_cross_size(0_px);
         if(self_size.width.type != containing_block_context::cbc_value_type_auto)
         {
-            max_cross_size = self_size.width;
+            // Flex items are laid out inside the container's content box.
+            // `width` is the outer resolved width on exact flex passes, while
+            // `render_width` has the container's border-box padding removed.
+            // Using `width` here makes a stretched child overflow by the
+            // parent's horizontal padding and then get clipped by overflow.
+            max_cross_size = self_size.render_width;
         }
         if(self_size.max_width.type != containing_block_context::cbc_value_type_none)
         {
@@ -464,7 +473,7 @@ void litehtml::flex_line::init(pixel_t container_main_size, bool fit_container, 
 
         for(auto& item : items)
         {
-            pixel_t el_ret_width = item->el->render(0_px, 0_px, self_size, fmt_ctx, false).natural_width;
+            pixel_t el_ret_width = item->el->render(0_px, 0_px, self_size.measured(), fmt_ctx, false).natural_width;
             item->el->render(0_px, 0_px,
                              self_size.new_width_height(el_ret_width - item->el->content_offset_width(),
                                                         item->main_size - item->el->content_offset_height(),

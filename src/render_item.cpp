@@ -3,7 +3,13 @@
 #include "document_container.h"
 #include "types.h"
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <typeinfo>
+#include <unordered_map>
+#include <vector>
 
 litehtml::render_item::render_item(std::shared_ptr<element> _src_el) :
     m_element(std::move(_src_el))
@@ -27,18 +33,218 @@ litehtml::render_item::render_item(std::shared_ptr<element> _src_el) :
     m_borders.bottom = doc->to_pixels(src_el()->css().get_borders().bottom.width, fm, 0_px);
 }
 
+bool litehtml::render_item::matches(const layout_result& entry, const containing_block_context& cb,
+                                    bool second_pass) const
+{
+    if(entry.revision != m_layout_revision || entry.second_pass != second_pass) return false;
+    // Layout derives this box's own constraints from the incoming width and
+    // height values and the size mode alone (calculate_containing_block_context,
+    // calc_outlines, relative offsets). The parent's render_width, min/max
+    // limits and length types never reach the result, nor does its context
+    // index, since a self-contained box owns its formatting context.
+    // size_mode_measure is only a hint from the caller.
+    const auto mode_mask = ~static_cast<uint32_t>(containing_block_context::size_mode_measure);
+    return entry.cb.width.value == cb.width.value && entry.cb.height.value == cb.height.value &&
+           (entry.cb.size_mode & mode_mask) == (cb.size_mode & mode_mask);
+}
+
+litehtml::rendered_width litehtml::render_item::reuse(const layout_result& entry, pixel_t x, pixel_t y)
+{
+    // m_pos is parent relative, so the same layout at another origin is the
+    // same box moved. Descendants are relative to this box and stay put.
+    // Probes can run at a NaN origin, which leaves no usable offset in the
+    // record; the box then starts at its outlines, as a fresh render does.
+    pixel_t offset_x = entry.pos.x - entry.x;
+    pixel_t offset_y = entry.pos.y - entry.y;
+    if(!std::isfinite(static_cast<float>(offset_x)))
+        offset_x = entry.margin.left + entry.border.left + entry.padding.left;
+    if(!std::isfinite(static_cast<float>(offset_y)))
+        offset_y = entry.margin.top + entry.border.top + entry.padding.top;
+    m_pos     = entry.pos;
+    m_pos.x   = x + offset_x;
+    m_pos.y   = y + offset_y;
+    m_margins = entry.margin;
+    m_padding = entry.padding;
+    m_borders = entry.border;
+    return entry.result;
+}
+
+bool litehtml::render_item::g_layout_reuse = true;
+static litehtml::render_item::layout_profile g_layout_profile;
+// Set when a render leaves a box detached, so finish_layout can skip its walk.
+static bool g_has_detached = false;
+
+namespace
+{
+    // LITEHTML_LAYOUT_TRACE: which boxes miss the layout cache, and with what.
+    struct miss_trace
+    {
+        size_t                   count = 0;
+        std::string              label;
+        std::vector<std::string> requests;
+    };
+
+    bool layout_trace_enabled()
+    {
+        static const bool enabled = std::getenv("LITEHTML_LAYOUT_TRACE") != nullptr;
+        return enabled;
+    }
+
+    std::unordered_map<const litehtml::render_item*, miss_trace>& miss_traces()
+    {
+        static std::unordered_map<const litehtml::render_item*, miss_trace> traces;
+        return traces;
+    }
+
+    std::string describe(const litehtml::containing_block_context& cb, bool second_pass)
+    {
+        char buffer[256];
+        std::snprintf(buffer, sizeof(buffer),
+                      "w=%.3f/%d rw=%.3f h=%.3f/%d minw=%.3f/%d maxw=%.3f/%d minh=%.3f/%d maxh=%.3f/%d mode=%u sp=%d",
+                      static_cast<float>(cb.width.value), static_cast<int>(cb.width.type),
+                      static_cast<float>(cb.render_width.value), static_cast<float>(cb.height.value),
+                      static_cast<int>(cb.height.type), static_cast<float>(cb.min_width.value),
+                      static_cast<int>(cb.min_width.type), static_cast<float>(cb.max_width.value),
+                      static_cast<int>(cb.max_width.type), static_cast<float>(cb.min_height.value),
+                      static_cast<int>(cb.min_height.type), static_cast<float>(cb.max_height.value),
+                      static_cast<int>(cb.max_height.type), cb.size_mode, second_pass ? 1 : 0);
+        return buffer;
+    }
+} // namespace
+
+void litehtml::render_item::dump_layout_trace()
+{
+    auto& traces = miss_traces();
+    std::vector<const miss_trace*> sorted;
+    sorted.reserve(traces.size());
+    for(const auto& entry : traces) sorted.push_back(&entry.second);
+    std::sort(sorted.begin(), sorted.end(),
+              [](const miss_trace* a, const miss_trace* b) { return a->count > b->count; });
+    std::fprintf(stderr, "[litehtml trace] %zu boxes missed\n", sorted.size());
+    for(size_t index = 0; index < sorted.size() && index < 8; ++index)
+    {
+        std::fprintf(stderr, "  %6zu misses  %s\n", sorted[index]->count, sorted[index]->label.c_str());
+        for(const auto& request : sorted[index]->requests)
+            std::fprintf(stderr, "           %s\n", request.c_str());
+    }
+    traces.clear();
+}
+
+void litehtml::render_item::reset_layout_profile()
+{
+    g_layout_profile = {};
+}
+
+litehtml::render_item::layout_profile litehtml::render_item::get_layout_profile()
+{
+    return g_layout_profile;
+}
+
+void litehtml::render_item::invalidate_layout()
+{
+    for(auto item = shared_from_this(); item; item = item->parent())
+    {
+        ++item->m_layout_revision;
+        if(item->m_layout_revision == 0) item->m_layout_revision = 1;
+    }
+}
+
+namespace
+{
+    bool percentage_height(const litehtml::css_length& length)
+    {
+        return !length.is_predefined() && length.units() == litehtml::css_units_percentage;
+    }
+}
+
+bool litehtml::render_item::can_stretch_without_reflow() const
+{
+    const auto& style = src_el()->css();
+    if(percentage_height(style.get_height()) || percentage_height(style.get_min_height()) ||
+       percentage_height(style.get_max_height()))
+    {
+        return false;
+    }
+
+    const auto display = style.get_display();
+    if(display == display_flex || display == display_inline_flex || display == display_table ||
+       display == display_inline_table)
+    {
+        return false;
+    }
+
+    for(const auto& child : m_children)
+    {
+        if(child && !child->can_stretch_without_reflow()) return false;
+    }
+    return true;
+}
+
 litehtml::rendered_width litehtml::render_item::render(pixel_t x, pixel_t y,
                                                        const containing_block_context& containing_block_size,
                                                        formatting_context* fmt_ctx, bool second_pass)
 {
-    if(!m_layout_dirty && m_has_layout_cache && !second_pass &&
-       src_el()->is_block_formatting_context() && m_cached_x == x && m_cached_y == y &&
-       m_cached_width == containing_block_size.width.value &&
-       m_cached_height == containing_block_size.height.value)
+    ++g_layout_profile.render_calls;
+
+    if(!is_visible())
     {
-        return m_cached_rendered_width;
+        // Hidden items do not participate in layout or paint, but retain their
+        // last placement. Clearing m_pos here makes a persistent tab panel
+        // come back with a false 0x0 geometry after it is selected again.
+        return {};
     }
 
+    // A render is only reusable when it owns its formatting context, because then
+    // its result depends on nothing but its arguments and its own subtree.
+    if(!src_el()->is_block_formatting_context() && fmt_ctx != nullptr)
+    {
+        ++g_layout_profile.uncached_renders;
+        return layout(x, y, containing_block_size, fmt_ctx, second_pass);
+    }
+
+    if(g_layout_reuse)
+    {
+        if(m_has_tree && matches(m_tree, containing_block_size, second_pass))
+        {
+            ++g_layout_profile.layout_hits;
+            m_detached = false;
+            return reuse(m_tree, x, y);
+        }
+        for(size_t index = 0; index < m_result_count; ++index)
+        {
+            if(matches(m_results[index], containing_block_size, second_pass))
+            {
+                ++g_layout_profile.cache_hits;
+                m_pending      = m_results[index];
+                m_detached     = true;
+                g_has_detached = true;
+                return reuse(m_pending, x, y);
+            }
+        }
+        if(m_has_tree && m_tree.revision != m_layout_revision)
+            ++g_layout_profile.dirty_misses;
+        else if(m_has_tree)
+        {
+            ++g_layout_profile.constraint_misses;
+            if(layout_trace_enabled())
+            {
+                auto& trace = miss_traces()[this];
+                if(trace.count++ == 0)
+                    trace.label = std::string(src_el()->get_tagName()) + "." + src_el()->get_attr("class", "") + "#" +
+                                  src_el()->get_attr("id", "");
+                if(trace.requests.size() < 10) trace.requests.push_back(describe(containing_block_size, second_pass));
+            }
+        }
+    }
+    m_detached = false;
+    return layout(x, y, containing_block_size, nullptr, second_pass);
+}
+
+litehtml::rendered_width litehtml::render_item::layout(pixel_t x, pixel_t y,
+                                                       const containing_block_context& containing_block_size,
+                                                       formatting_context* fmt_ctx, bool second_pass)
+{
+    ++g_layout_profile.actual_renders;
     calc_outlines(containing_block_size.width);
 
     m_pos.clear();
@@ -50,32 +256,65 @@ litehtml::rendered_width litehtml::render_item::render(pixel_t x, pixel_t y,
     m_pos.x += content_left;
     m_pos.y += content_top;
 
-    if(src_el()->is_block_formatting_context() || (fmt_ctx == nullptr))
+    if(fmt_ctx)
     {
-        formatting_context fmt;
-        auto               ret = _render(x, y, containing_block_size, &fmt, second_pass);
-        fmt.apply_relative_shift(containing_block_size);
-        m_cached_x = x;
-        m_cached_y = y;
-        m_cached_width = containing_block_size.width.value;
-        m_cached_height = containing_block_size.height.value;
-        m_cached_rendered_width = ret;
-        m_has_layout_cache = true;
-        m_layout_dirty = false;
+        fmt_ctx->push_position(x + content_left, y + content_top);
+        auto ret = _render(x, y, containing_block_size, fmt_ctx, second_pass);
+        fmt_ctx->pop_position(x + content_left, y + content_top);
         return ret;
     }
 
-    fmt_ctx->push_position(x + content_left, y + content_top);
-    auto ret = _render(x, y, containing_block_size, fmt_ctx, second_pass);
-    fmt_ctx->pop_position(x + content_left, y + content_top);
-    m_cached_x = x;
-    m_cached_y = y;
-    m_cached_width = containing_block_size.width.value;
-    m_cached_height = containing_block_size.height.value;
-    m_cached_rendered_width = ret;
-    m_has_layout_cache = true;
-    m_layout_dirty = false;
+    formatting_context fmt;
+    auto               ret = _render(x, y, containing_block_size, &fmt, second_pass);
+    fmt.apply_relative_shift(containing_block_size);
+
+    // With reuse off nothing records the subtree's layout, so do not let a
+    // later render trust an older record.
+    m_has_tree = g_layout_reuse;
+    if(g_layout_reuse)
+    {
+        m_tree = {containing_block_size, m_layout_revision, second_pass, x, y, m_pos, m_margins, m_padding, m_borders,
+                  ret};
+        // Only reached on a miss, so no current entry has these constraints.
+        m_results[m_next_result] = m_tree;
+        m_next_result            = (m_next_result + 1) % result_cache_size;
+        m_result_count           = std::min(m_result_count + 1, result_cache_size);
+    }
     return ret;
+}
+
+void litehtml::render_item::finish_layout()
+{
+    if(!g_has_detached) return;
+    materialize_detached();
+    g_has_detached = false;
+}
+
+void litehtml::render_item::materialize_detached()
+{
+    if(m_detached && is_visible())
+    {
+        ++g_layout_profile.materialized;
+        m_detached = false;
+        // The parent has already placed, stretched and offset this box. Only
+        // the subtree needs the pending layout, and it is relative to the box,
+        // so keep the box exactly where the parent left it.
+        const position      pos     = m_pos;
+        const margins       margin  = m_margins;
+        const margins       padding = m_padding;
+        const margins       border  = m_borders;
+        const layout_result pending = m_pending;
+        layout(pending.x, pending.y, pending.cb, nullptr, pending.second_pass);
+        m_pos     = pos;
+        m_margins = margin;
+        m_padding = padding;
+        m_borders = border;
+    }
+    // Laying out a subtree can detach its children again; they are visited next.
+    for(const auto& child : m_children)
+    {
+        child->materialize_detached();
+    }
 }
 
 void litehtml::render_item::calc_outlines(pixel_t parent_width)
@@ -779,6 +1018,9 @@ void litehtml::render_item::render_positioned(render_type rt)
             {
                 position pos = el->m_pos;
                 el->render(el->left(), el->top(), containing_block_size.new_width(el->width()), nullptr, true);
+                // Its positioned descendants are placed below, so a deferred
+                // subtree layout has to run now instead of resetting them later.
+                el->materialize_detached();
                 el->m_pos = pos;
             }
 
@@ -846,6 +1088,8 @@ void litehtml::render_item::get_redraw_box(litehtml::position& pos, pixel_t x /*
 
 void litehtml::render_item::calc_document_size(litehtml::size& sz, pixel_t x /*= 0*/, pixel_t y /*= 0*/)
 {
+    if(!is_visible()) return;
+
     auto inline_processed = for_inline_boxes([&sz, &x, &y](const position& box, bool, bool) {
         sz.width  = std::max(sz.width, x + box.x + box.width);
         sz.height = std::max(sz.height, y + box.y + box.height);

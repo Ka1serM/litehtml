@@ -230,7 +230,8 @@ void litehtml::render_item_inline_context::place_inline(std::unique_ptr<line_box
                                                         const containing_block_context& self_size,
                                                         formatting_context*             fmt_ctx)
 {
-    if(item->get_el()->src_el()->css().get_display() == display_none)
+    if(item->get_el()->hidden() || !item->get_el()->src_el()->is_visible() ||
+       item->get_el()->src_el()->css().get_display() == display_none)
     {
         return;
     }

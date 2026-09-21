@@ -4,6 +4,8 @@
 #include <memory>
 #include <list>
 #include <tuple>
+#include <array>
+#include <vector>
 #include "html.h"
 #include "types.h"
 #include "line_box.h"
@@ -21,21 +23,83 @@ namespace litehtml
       protected:
         std::shared_ptr<element>                  m_element;
         std::weak_ptr<render_item>                m_parent;
-        std::vector<std::shared_ptr<render_item>> m_children;
+        std::list<std::shared_ptr<render_item>>   m_children;
         margins                                   m_margins;
         margins                                   m_padding;
         margins                                   m_borders;
         position                                  m_pos;
         bool                                      m_skip = false;
-        bool                                      m_layout_dirty = true;
-        bool                                      m_has_layout_cache = false;
-        pixel_t                                   m_cached_x = 0_px;
-        pixel_t                                   m_cached_y = 0_px;
-        pixel_t                                   m_cached_width = 0_px;
-        pixel_t                                   m_cached_height = 0_px;
-        rendered_width                            m_cached_rendered_width;
         std::vector<std::shared_ptr<render_item>> m_positioned;
         std::shared_ptr<scroll_view>              m_scroll_view;
+
+      public:
+        struct layout_profile
+        {
+            uint64_t render_calls      = 0;
+            uint64_t layout_hits       = 0; // the subtree already held the requested layout
+            uint64_t cache_hits        = 0; // answered from the cache, subtree deferred
+            uint64_t actual_renders    = 0;
+            uint64_t materialized      = 0; // deferred subtrees laid out by finish_layout
+            // Why a reusable render ran anyway.
+            uint64_t dirty_misses      = 0; // subtree changed since the last layout
+            uint64_t constraint_misses = 0; // clean, but asked for an unseen layout
+            uint64_t uncached_renders  = 0; // does not own its formatting context
+        };
+
+        static void          reset_layout_profile();
+        static layout_profile get_layout_profile();
+        // Prints and clears the LITEHTML_LAYOUT_TRACE miss log.
+        static void          dump_layout_trace();
+
+      protected:
+        // One render of this box: its inputs and its own box geometry.
+        struct layout_result
+        {
+            containing_block_context cb;
+            uint64_t                 revision    = 0;
+            bool                     second_pass = false;
+            pixel_t                  x           = 0_px;
+            pixel_t                  y           = 0_px;
+            position                 pos;
+            // width()/height() add these to m_pos, and calc_outlines resolves
+            // them against the containing block, so reuse has to restore them.
+            margins        margin;
+            margins        padding;
+            margins        border;
+            rendered_width result;
+        };
+
+        // Layout reuse works like a browser layout cache. What a render returns
+        // to its parent (the result and this box's own geometry) depends only on
+        // the constraints and the subtree, so a clean box (unchanged revision)
+        // answers any recently seen request from m_results without touching its
+        // subtree. Flex and block layout ask each child for several sizes, so
+        // a single remembered layout would thrash.
+        //
+        // The subtree only has to hold the final layout. m_tree is the layout
+        // it holds now, which stays valid because descendants are only laid out
+        // from this box's _render. A cached answer that is not m_tree leaves
+        // the box detached, and finish_layout() lays out its subtree once after
+        // the document layout has settled every box.
+        static constexpr size_t                      result_cache_size = 16;
+        std::array<layout_result, result_cache_size> m_results;
+        size_t                                       m_result_count = 0;
+        size_t                                       m_next_result  = 0;
+        layout_result                                m_tree;
+        bool                                         m_has_tree = false;
+        // The request the subtree still has to be laid out for.
+        layout_result                                m_pending;
+        bool                                         m_detached        = false;
+        uint64_t                                     m_layout_revision = 1;
+
+        bool           matches(const layout_result& entry, const containing_block_context& cb,
+                               bool second_pass) const;
+        rendered_width reuse(const layout_result& entry, pixel_t x, pixel_t y);
+        // Lays out the box and its subtree. A null fmt_ctx gives the box its
+        // own formatting context and records the result for reuse.
+        rendered_width layout(pixel_t x, pixel_t y, const containing_block_context& containing_block_size,
+                              formatting_context* fmt_ctx, bool second_pass);
+        void           materialize_detached();
 
         containing_block_context calculate_containing_block_context(const containing_block_context& cb_context);
         void                     calc_cb_length(const css_length& len, pixel_t percent_base,
@@ -101,7 +165,7 @@ namespace litehtml
             return m_scroll_view ? m_scroll_view->is_v_scrollable(dy) : false;
         }
 
-        std::vector<std::shared_ptr<render_item>>& children()
+        std::list<std::shared_ptr<render_item>>& children()
         {
             return m_children;
         }
@@ -133,18 +197,11 @@ namespace litehtml
             m_skip = val;
         }
 
-        void mark_layout_dirty()
+        // Visibility is owned by the element, so every render item of it, and
+        // every anonymous box around it, sees the same state.
+        bool hidden() const
         {
-            const bool already_dirty = m_layout_dirty && !m_has_layout_cache;
-            m_layout_dirty = true;
-            m_has_layout_cache = false;
-            if(!already_dirty)
-            {
-                if(auto parent = m_parent.lock())
-                {
-                    parent->mark_layout_dirty();
-                }
-            }
+            return !src_el()->is_visible();
         }
 
         pixel_t right() const
@@ -444,7 +501,7 @@ namespace litehtml
 
         bool is_visible() const
         {
-            return !m_skip && src_el()->css().get_display() != display_none &&
+            return !m_skip && src_el()->is_visible() &&src_el()->css().get_display() != display_none &&
                    src_el()->css().get_visibility() == visibility_visible;
         }
 
@@ -454,8 +511,23 @@ namespace litehtml
             return par && (par->css().get_display() == display_inline_flex || par->css().get_display() == display_flex);
         }
 
+        // Turned off by the layout tests to produce an unmemoized reference.
+        static bool g_layout_reuse;
+
         rendered_width render(pixel_t x, pixel_t y, const containing_block_context& containing_block_size,
                               formatting_context* fmt_ctx, bool second_pass = false);
+        // Lays out the subtrees whose render was answered from the layout
+        // cache. document::render calls this once every box is placed.
+        void           finish_layout();
+        // Invalidate this item and every containing block that can depend on
+        // its geometry. Descendants remain reusable when their own inputs are
+        // unchanged; the ancestor snapshot is discarded as a whole.
+        void           invalidate_layout();
+        // An auto-height flex item may be stretched after its width reflow.
+        // This is safe without a second descendant reflow only when no
+        // descendant depends on the containing block height or flex/table
+        // cross-size resolution.
+        bool           can_stretch_without_reflow() const;
         void           apply_relative_shift(const containing_block_context& containing_block_size);
         void           calc_outlines(pixel_t parent_width);
         pixel_t        calc_auto_margins(pixel_t parent_width); // returns left margin

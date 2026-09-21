@@ -49,12 +49,11 @@ namespace litehtml
         pixel_t                      m_rendered_min_width;
         pixel_t                      m_items_top;
         pixel_t                      m_items_bottom;
+        bool                         m_is_white_space = false;
+        bool                         m_is_break = false;
 
       public:
-        explicit line_box_item(const std::shared_ptr<render_item>& element) :
-            m_element(element)
-        {
-        }
+        explicit line_box_item(const std::shared_ptr<render_item>& element);
         line_box_item(const line_box_item& el) = default;
         line_box_item(line_box_item&&)         = default;
         virtual ~line_box_item();
@@ -63,6 +62,14 @@ namespace litehtml
         const std::shared_ptr<render_item>& get_el() const
         {
             return m_element;
+        }
+        bool is_white_space() const
+        {
+            return m_is_white_space;
+        }
+        bool is_break() const
+        {
+            return m_is_break;
         }
         virtual position&    pos();
         virtual void         place_to(pixel_t x, pixel_t y);
@@ -187,7 +194,13 @@ namespace litehtml
         text_align        m_text_align;
         rendered_width    m_rendered_width;
 
-        std::vector<std::unique_ptr<line_box_item>> m_items;
+        std::list<std::unique_ptr<line_box_item>> m_items;
+        // These values are maintained while items are added.  Inline layout
+        // asks these questions for every item, so scanning m_items here turns
+        // a long line into quadratic work.
+        line_box_item* m_last_text_item = nullptr;
+        size_t         m_break_count = 0;
+        size_t         m_non_skipped_text_count = 0;
 
       public:
         line_box(pixel_t top, pixel_t left, pixel_t right, const css_line_height_t& line_height, const font_metrics& fm,
@@ -245,17 +258,18 @@ namespace litehtml
         pixel_t bottom_margin() const;
         void    y_shift(pixel_t shift);
 
-        std::vector<std::unique_ptr<line_box_item>> finish(bool                            last_box,
-                                                           const containing_block_context& containing_block_size);
-        std::vector<std::unique_ptr<line_box_item>> new_width(pixel_t left, pixel_t right);
+        std::list<std::unique_ptr<line_box_item>>  finish(bool                            last_box,
+                                                          const containing_block_context& containing_block_size);
+        std::list<std::unique_ptr<line_box_item>>  new_width(pixel_t left, pixel_t right);
         std::shared_ptr<render_item>               get_last_text_part() const;
         std::shared_ptr<render_item>               get_first_text_part() const;
-        std::vector<std::unique_ptr<line_box_item>>& items()
+        std::list<std::unique_ptr<line_box_item>>& items()
         {
             return m_items;
         }
 
       private:
+        void           rebuild_item_cache();
         bool           have_last_space() const;
         bool           is_break_only() const;
         static pixel_t calc_va_baseline(const va_context& current, vertical_align va, const font_metrics& new_font,

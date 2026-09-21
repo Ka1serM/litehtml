@@ -2,6 +2,34 @@
 #include "el_text.h"
 #include "render_item.h"
 #include "document_container.h"
+#include <string_view>
+
+namespace {
+
+std::size_t previous_utf8_codepoint(const std::string& text, const std::size_t end) {
+    if (end == 0) return 0;
+    std::size_t start = end - 1;
+    while (start > 0 && (static_cast<unsigned char>(text[start]) & 0xc0u) == 0x80u) --start;
+    return start;
+}
+
+std::string ellipsize(const std::string_view text, const litehtml::pixel_t max_width,
+                     const litehtml::uint_ptr font, litehtml::document_container* container) {
+    constexpr std::string_view ellipsis = "\xE2\x80\xA6";
+    if (container->text_width(ellipsis.data(), font) > max_width) return {};
+    if (container->text_width(text.data(), font) <= max_width) return std::string(text);
+
+    std::string result(text);
+    while (!result.empty()) {
+        result.resize(previous_utf8_codepoint(result, result.size()));
+        std::string candidate = result;
+        candidate += ellipsis;
+        if (container->text_width(candidate.c_str(), font) <= max_width) return candidate;
+    }
+    return std::string(ellipsis);
+}
+
+}  // namespace
 
 litehtml::el_text::el_text(const char* text, const document::ptr& doc) :
     element(doc)
@@ -31,7 +59,11 @@ void litehtml::el_text::set_data(const char* data)
     m_transformed_text.clear();
     m_use_transformed = false;
     compute_styles(false);
-    mark_layout_dirty(false);
+    // Text nodes can be updated after the persistent render tree has been
+    // laid out (range outputs are a common example). Their width and content
+    // changed, so invalidate the containing layout instead of relying on a
+    // later resize to change the root cache key.
+    if(const auto render = get_render_item()) render->invalidate_layout();
 }
 
 void litehtml::el_text::compute_styles(bool /*recursive*/)
@@ -136,8 +168,39 @@ void litehtml::el_text::draw(uint_ptr hdc, pixel_t x, pixel_t y, const position*
             if(font)
             {
                 web_color color = el_parent->css().get_color();
-                doc->container()->draw_text(hdc, m_use_transformed ? m_transformed_text.c_str() : m_text.c_str(), font,
-                                            color, pos);
+                const char* source_text = m_use_transformed ? m_transformed_text.c_str() : m_text.c_str();
+                std::string shortened_text;
+                auto overflow_element = el_parent;
+                while(overflow_element && overflow_element->css().get_text_overflow() != text_overflow_ellipsis)
+                {
+                    overflow_element = overflow_element->parent();
+                }
+
+                const auto overflow_render = overflow_element ? overflow_element->get_render_item() : nullptr;
+                pixel_t text_offset_x = ri->pos().x;
+                auto containing_render = ri->parent();
+                while(containing_render && containing_render != overflow_render)
+                {
+                    text_offset_x += containing_render->pos().x;
+                    containing_render = containing_render->parent();
+                }
+
+                if(overflow_render && containing_render == overflow_render &&
+                   overflow_element->css().get_white_space() == white_space_nowrap &&
+                   overflow_element->css().get_overflow() != overflow_visible)
+                {
+                    pixel_t available_width = overflow_render->pos().width - text_offset_x;
+                    if(available_width <= 0_px)
+                    {
+                        available_width = overflow_render->width() - overflow_render->content_offset_width() - text_offset_x;
+                    }
+                    if(available_width > 0_px)
+                    {
+                        shortened_text = ellipsize(source_text, available_width, font, doc->container());
+                        source_text = shortened_text.c_str();
+                    }
+                }
+                doc->container()->draw_text(hdc, source_text, font, color, pos);
             }
         }
     }

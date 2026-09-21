@@ -45,6 +45,8 @@ void litehtml::css_properties::compute(const html_tag* el, const document::ptr& 
         el->get_property<int>(_text_transform_, true, text_transform_none, offset(m_text_transform)));
     m_white_space =
         static_cast<white_space>(el->get_property<int>(_white_space_, true, white_space_normal, offset(m_white_space)));
+    m_text_overflow = static_cast<text_overflow>(
+        el->get_property<int>(_text_overflow_, false, text_overflow_clip, offset(m_text_overflow)));
     m_caption_side = static_cast<caption_side>(
         el->get_property<int>(_caption_side_, true, caption_side_top, offset(m_caption_side)));
 
@@ -664,6 +666,7 @@ std::vector<std::tuple<std::string, std::string>> litehtml::css_properties::dump
     ret.emplace_back("font_size", m_font_size.to_string());
     ret.emplace_back("overflow", css_values(overflow_strings).value_by_index(m_overflow));
     ret.emplace_back("white_space", css_values(white_space_strings).value_by_index(m_white_space));
+    ret.emplace_back("text_overflow", css_values(text_overflow_strings).value_by_index(m_text_overflow));
     ret.emplace_back("visibility", css_values(visibility_strings).value_by_index(m_visibility));
     ret.emplace_back("appearance", css_values(appearance_strings).value_by_index(m_appearance));
     ret.emplace_back("box_sizing", css_values(box_sizing_strings).value_by_index(m_box_sizing));
