@@ -23,6 +23,22 @@ namespace litehtml
     {
     }
 
+    void element::mark_layout_dirty(bool subtree)
+    {
+        for(const auto& weak_render : m_renders)
+        {
+            if(const auto render = weak_render.lock()) render->invalidate_layout();
+        }
+
+        if(subtree)
+        {
+            for(const auto& child : m_children)
+            {
+                if(child) child->mark_layout_dirty(true);
+            }
+        }
+    }
+
     void element::set_visible(bool visible)
     {
         if(m_hidden == !visible) return;
