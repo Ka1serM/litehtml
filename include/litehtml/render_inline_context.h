@@ -40,8 +40,8 @@ namespace litehtml
         void           fix_line_width(element_float flt, const containing_block_context& self_size,
                                       formatting_context* fmt_ctx) override;
 
-        std::vector<std::unique_ptr<line_box_item>> finish_last_box(bool                            end_of_render,
-                                                                     const containing_block_context& self_size);
+        std::list<std::unique_ptr<line_box_item>> finish_last_box(bool                            end_of_render,
+                                                                   const containing_block_context& self_size);
         void    place_inline(std::unique_ptr<line_box_item> item, const containing_block_context& self_size,
                              formatting_context* fmt_ctx);
         pixel_t new_box(const std::unique_ptr<line_box_item>& el, const containing_block_context& self_size,

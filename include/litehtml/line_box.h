@@ -2,6 +2,7 @@
 #define LITEHTML_LINE_BOX_H
 
 #include <memory>
+#include <list>
 #include "css_properties.h"
 #include "types.h"
 

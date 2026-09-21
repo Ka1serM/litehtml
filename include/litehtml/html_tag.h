@@ -28,7 +28,10 @@ namespace litehtml
         string_vector          m_str_classes;
         std::vector<string_id> m_classes;
         style                  m_style;
-        attribute_map          m_attrs;
+        // attributes() is part of element's public API and returns string_map.
+        // Keep storage in that exact type; a hash map cannot bind to the
+        // required reference and made every html_tag declaration ill-formed.
+        string_map             m_attrs;
         std::vector<string_id> m_pseudo_classes;
 
         void select_all(const css_selector& selector, elements_list& res) override;

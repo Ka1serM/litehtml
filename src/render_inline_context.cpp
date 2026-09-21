@@ -117,7 +117,7 @@ void litehtml::render_item_inline_context::fix_line_width(element_float flt, con
 
         if(!was_cleared)
         {
-            std::vector<std::unique_ptr<line_box_item>> items = std::move(m_line_boxes.back()->items());
+            std::list<std::unique_ptr<line_box_item>> items = std::move(m_line_boxes.back()->items());
             m_line_boxes.pop_back();
 
             for(auto& item : items)
@@ -157,10 +157,10 @@ void litehtml::render_item_inline_context::fix_line_width(element_float flt, con
     }
 }
 
-std::vector<std::unique_ptr<litehtml::line_box_item>> litehtml::render_item_inline_context::finish_last_box(
+std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::render_item_inline_context::finish_last_box(
     bool end_of_render, const containing_block_context& self_size)
 {
-    std::vector<std::unique_ptr<line_box_item>> ret;
+    std::list<std::unique_ptr<line_box_item>> ret;
 
     if(!m_line_boxes.empty())
     {
